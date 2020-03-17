@@ -7,142 +7,281 @@
 
 using namespace vcl;
 
-
-
-
-
-
-
 void scene_model::frame_draw(std::map<std::string,GLuint>& , scene_structure& scene, gui_structure& )
 {
     float dt = 0.02f;
     if(! (timer.update()>0) ) dt=0;
 
     set_gui();
-	if(particles.size()<3)
+	if(particles.size()<60)
 		create_new_particle();
+	int rd = rand_interval(0,10);
+	if(rd ==1)
+		//create_new_bubble();
     compute_time_step(dt);
 
     display_particles(scene);
-    draw(borders, scene.camera);
+    //draw(borders, scene.camera);
+	draw(pool, scene.camera);
+	draw(pool2, scene.camera);
+	draw(pool3, scene.camera);
 
 }
 
 void scene_model::compute_time_step(float dt)
 {
 
-    float alpha = 0.99f;
-    float beta = 0.99f;
-    float epsilon = 0.1f;
-    float mu = 0.2f;
     float mu_box = 1;
 
-    // Set forces (gravity)
     const size_t N = particles.size();
-    for(size_t k=0; k<N; ++k)
-        particles[k].f = vec3(0,0,0); //particles[k].f = vec3(0,-9.81f,0);
+
+	for (size_t i = 0; i < N; ++i) {
+		particle_structure& particle = particles[i];
+		vec3& v = particle.v;
+		vec3& p = particle.p;
+		vec3& f = particle.f;
+		float& r = particle.r;
+		float& t = particle.t;
+
+		vcl::vec3 f1= align(particles, i, gui_scene.radiusAllign, gui_scene.maxa,gui_scene.maxv);
+		vcl::vec3 f2 = cohesion(particles, i, gui_scene.radiusCohersion,  gui_scene.maxa, gui_scene.maxv);
+		vcl::vec3 f3 = separate(particles, i, gui_scene.radiusSeparate, gui_scene.maxa, gui_scene.maxv);
+		vcl::vec3 f4 = turn(particles, i, 0.5, gui_scene.maxa, gui_scene.maxv);
+		vcl::vec3 ftot = gui_scene.allign_factor   * f1 +
+						 gui_scene.cohesion_factor * f2 +
+						 gui_scene.separate_factor * f3 ;		
+
+		f += ftot ;
+		v = v + dt * f;
+		if (norm(v) > gui_scene.maxv) {
+			v = normalize(v) * gui_scene.maxv;
+		}
+		p = p + dt * v;
+		//f *= 0;
+		// check bounding box
+
+		float d_x = abs(p.x) + r - gui_scene.space;
+		float d_y = abs(p.y) + r - gui_scene.space;
+		float d_z = abs(p.z) + r - gui_scene.space;
+
+		if (d_x > 0)
+		{
+			v.x = -mu_box * v.x;
+			p.x = p.x - d_x * p.x/abs(p.x);
+
+		}
+		if (d_y > 0)
+		{
+			v.y = -mu_box * v.y;
+			p.y = p.y - d_y * p.y / abs(p.y);
+
+		}
+		if (d_z > 0)
+		{
+			v.z = -mu_box * v.z;
+			p.z = p.z - d_z * p.z / abs(p.z);
+		}
+
+		t+=dt;
+	}
 
 
-    // Integrate position and speed of particles through time
-    for(size_t k=0; k<N; ++k) {
-        particle_structure& particle = particles[k];
-        vec3& v = particle.v;
-        vec3& p = particle.p;
-        vec3 const& f = particle.f;
-        float& r = particle.r;
+	// BUBBLES:
+	/*const size_t Nb = bubbles.size();
 
-        //v = (1-0.9f*dt) * v + dt * f; // gravity + friction force
-        p = p + dt * v;
+	for (size_t i = 0; i < Nb; ++i) {
+		particle_structure& particle = bubbles[i];
+		vec3& v = particle.v;
+		vec3& p = particle.p;
+		vec3& f = particle.f;
+		float& r = particle.r;
+		float& t = particle.t;
+		float& ampl = particle.ampl;
+		
+		v.x = ampl * cos(t);
+		v.z = ampl * sin(t);
+
+		p = p + dt * v;
+		t += dt;
+
+	}*/
 
 
-        // check other particles
-        for (size_t k_other = 0; k_other < N; ++k_other)
-        {
-            if (k_other == k)
-                continue;
-            particle_structure& particle_o = particles[k_other];
-            vec3& v_o = particle_o.v;
-            vec3& p_o = particle_o.p;
-            vec3 const& f_o = particle_o.f;
-            float& r_o = particle_o.r;
 
-            float d = r + r_o - norm(p - p_o);
-            
-            
-            if (d > 0)
-            {
-                vec3 u = (p - p_o) / norm(p - p_o);
-                vec3 v_relat = (v_o - v) / norm(v - v_o);
-                float j = dot(v_o - v, u);
-                if (norm(v_relat) > epsilon)
-                {
-                    v = alpha * v + beta * j * u;
-                    v_o = alpha * v_o - beta * j * u;
-                }
-                else
-                {
-                    v *= mu;
-                    v_o *= mu;
-                }
 
-                p = p + 0.5 * d * u;
-                p_o = p_o - 0.5 * d * u;
-                
-            }
 
-        }
-               
-        // check bounding box
-		//r + r_o - norm(p - p_o);
-        float d_x = abs(p.x) + r - 1;
-        float d_y = abs(p.y) + r - 1;
-        float d_z = abs(p.z) + r - 1;
-
-        if (d_x > 0) 
-        {
-            v.x = -mu_box * v.x;
-            p.x = p.x - d_x * p.x/abs(p.x);
-        }
-        if (d_y > 0)
-        {
-            v.y = -mu_box * v.y;
-            p.y = p.y - d_y * p.y / abs(p.y);
-        }
-        if (d_z > 0)
-        {
-            v.z = -mu_box * v.z;
-            p.z = p.z - d_z * p.z / abs(p.z);
-        }
         
-    }
 }
 
+
+
+
+
+vcl::vec3 align(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv) {
+	vcl::vec3 avg_v;
+	particle_structure currentp = particles[idx_particle];
+	int neighCount = 0;
+	for (int i = 0; i < particles.size(); i++) {
+		float d = norm(currentp.p - particles[i].p);
+		if (idx_particle != i && d<r) {
+			avg_v += particles[i].v;
+			neighCount++;
+		}
+
+	}
+
+	if (neighCount > 0) {
+		avg_v /= neighCount;
+		avg_v = normalize(avg_v) * maxv;
+		//steer force  desired velocity - current velocity
+		avg_v = avg_v - currentp.v;
+
+		if (norm(avg_v) > maxa) {
+			avg_v = normalize(avg_v) * maxa;
+		}
+
+	}
+	else {
+		avg_v = vcl::vec3(0, 0, 0);
+	}
+	
+	return avg_v;
+}
+
+
+vcl::vec3 cohesion(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv) {
+	vcl::vec3 avg_p;
+	particle_structure currentp = particles[idx_particle];
+	int neighCount = 0;
+	for (int i = 0; i < particles.size(); i++) {
+		float d = norm(currentp.p - particles[i].p);
+		if (idx_particle != i && d < r) {
+			avg_p += particles[i].p;
+			neighCount++;
+		}
+
+	}
+
+	if (neighCount > 0) {
+		avg_p /= neighCount;
+		avg_p = avg_p - currentp.p;
+		avg_p = normalize(avg_p) * maxv;
+
+		if (norm(avg_p) > maxa) {
+			avg_p = normalize(avg_p) * maxa;
+		}
+	}
+	else {
+		avg_p = vcl::vec3(0, 0, 0);
+	}
+
+	return avg_p;
+}
+
+
+vcl::vec3 separate(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv) {
+	vcl::vec3 avg_v;
+	particle_structure currentp = particles[idx_particle];
+	int neighCount = 0;
+	for (int i = 0; i < particles.size(); i++) {
+		float d = norm(currentp.p - particles[i].p);
+		if (idx_particle != i && d < r) {
+			vcl::vec3 oppvec = currentp.p - particles[i].p;
+			oppvec /= pow(d,2);
+			avg_v += oppvec;
+			neighCount++;
+		}
+
+	}
+
+	if (neighCount > 0) {
+		avg_v /= neighCount;
+		avg_v = normalize(avg_v) * maxv;
+		avg_v = avg_v - currentp.v;
+		float n = norm(avg_v);
+		if (norm(avg_v) > maxa) {
+			avg_v = normalize(avg_v) * maxa;
+		}
+
+	}
+
+	return avg_v;
+}
+
+
+vcl::vec3 turn(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv) {
+	vcl::vec3 fturn;
+	particle_structure currentp = particles[idx_particle];
+
+	float phi = 2 * 3.1415 * r * 10000;
+
+	fturn.x = cos(currentp.t);
+	//fturn.y = sin(currentp.t) + sin(phi);
+	//fturn.z = sin(currentp.t);
+	
+	return maxa*fturn;
+}
 
 void scene_model::create_new_particle()
 {
     // Emission of new particle if needed
     timer.periodic_event_time_step = gui_scene.time_interval_new_sphere;
     const bool is_new_particle = timer.event;
-    static const std::vector<vec3> color_lut = {{1,0,0},{0,1,0},{0,0,1},{1,1,0},{1,0,1},{0,1,1}};
+    static const std::vector<vec3> color_lut = {{1,0,0},{0,1,0},{1,1,0},{1,0,1},{0,1,1}};
 
     if( is_new_particle && gui_scene.add_sphere)
     {
         particle_structure new_particle;
 
         new_particle.r = 0.08f;
+		new_particle.t = 0.;;
         new_particle.c = color_lut[int(rand_interval()*color_lut.size())];
 
         // Initial position
-        new_particle.p = vec3(0,0,0);
+        /*
+		x = r cos(v) cos(u)
+		y = r cos(v) sin(u)     u = [0, 2*Pi)
+		z = r sin(v)            v = [-Pi/2, Pi/2]
+		*/
 
         // Initial speed
-        const float theta = rand_interval(0, 2*3.14f);
-        new_particle.v = vec3( 0.5*std::cos(theta), 0.5f, 0.5*std::sin(theta));
+        const float u = rand_interval(0, 2*3.1415f);
+		const float v = rand_interval(-3.1415f/2, 3.1415f/2);
+		new_particle.p = vec3( cos(v) * cos(u),  cos(v) * sin(u),  sin(v));
+        new_particle.v = vec3( cos(v) * cos(u),  cos(v) * sin(u),  sin(v));
 
         particles.push_back(new_particle);
 
     }
 }
+
+
+void scene_model::create_new_bubble()
+{
+	// Emission of new particle if needed
+	timer.periodic_event_time_step = gui_scene.time_interval_new_sphere;
+	const bool is_new_particle = timer.event;
+
+	if (is_new_particle && gui_scene.add_sphere)
+	{
+		particle_structure new_particle;
+
+		new_particle.r = 0.04f;
+		new_particle.c = vec3{ 0,0,1 };
+		new_particle.t = 0.;
+		new_particle.ampl = rand_interval(0, 0.4);
+		// Initial speed
+		const float theta = rand_interval(0, 5);
+		const float amplitude = rand_interval(0, 1);
+		new_particle.p = vec3(rand_interval(-gui_scene.space, gui_scene.space), -gui_scene.space, rand_interval(-gui_scene.space, gui_scene.space));
+		new_particle.v = vec3(0, 0.05 * theta , 0);
+
+		bubbles.push_back(new_particle);
+
+	}
+}
+
+
 void scene_model::display_particles(scene_structure& scene)
 {
     const size_t N = particles.size();
@@ -155,6 +294,18 @@ void scene_model::display_particles(scene_structure& scene)
         sphere.uniform.color = part.c;
         draw(sphere, scene.camera);
     }
+
+
+	const size_t Nb = bubbles.size();
+	for (size_t k = 0; k < Nb; ++k)
+	{
+		const particle_structure& part = bubbles[k];
+
+		sphere.uniform.transform.translation = part.p;
+		sphere.uniform.transform.scaling = part.r;
+		sphere.uniform.color = part.c;
+		draw(sphere, scene.camera);
+	}
 }
 
 
@@ -162,15 +313,42 @@ void scene_model::display_particles(scene_structure& scene)
 
 void scene_model::setup_data(std::map<std::string,GLuint>& shaders, scene_structure& , gui_structure& )
 {
+	/*bubble = mesh_primitive_sphere(0.03f);
+	bubble.shader = shaders["mesh"];*/
+
     sphere = mesh_drawable( mesh_primitive_sphere(1.0f));
     sphere.shader = shaders["mesh"];
+	float s = 10;
+    
+	//borders=mesh_primitive_quad();
+ //   borders = segments_gpu(borders_segments);
+ //   borders.uniform.color = {0,0,0};
+ //   borders.shader = shaders["curve"];
+	std::vector<vec3> borders_1 = { {-s,-s,-s},{-s,s,-s}, {s,-s,-s},{-s,-s,s} };
+	std::vector<vec3> borders_2 = { {s,s,-s},{s,s,s}, {s,-s,-s},{-s,s,-s} };
+	std::vector<vec3> borders_3 = { {s,-s,s},{-s,-s,s}, {s,-s,-s},{s,s,s} };
+	pool = mesh_primitive_quad(borders_1[0], borders_1[1], borders_1[2], borders_1[3]);
+	pool.shader = shaders["mesh"];
+	pool.uniform.color = { 1,1,1 };
+	pool.uniform.shading = { 1,0,0 };
+	pool.uniform.transform.scaling = 1.f;
+	pool.texture_id = create_texture_gpu(image_load_png("D:/EcolePolytechnique/INF585_ComputerAnimation/inf585_vcl/scenes/sources/BoidsFishes/caustics.png"));
 
-    std::vector<vec3> borders_segments = {{-1,-1,-1},{1,-1,-1}, {1,-1,-1},{1,1,-1}, {1,1,-1},{-1,1,-1}, {-1,1,-1},{-1,-1,-1},
-                                          {-1,-1,1} ,{1,-1,1},  {1,-1,1}, {1,1,1},  {1,1,1}, {-1,1,1},  {-1,1,1}, {-1,-1,1},
-                                          {-1,-1,-1},{-1,-1,1}, {1,-1,-1},{1,-1,1}, {1,1,-1},{1,1,1},   {-1,1,-1},{-1,1,1}};
-    borders = segments_gpu(borders_segments);
-    borders.uniform.color = {0,0,0};
-    borders.shader = shaders["curve"];
+	pool2 = mesh_primitive_quad(borders_2[0], borders_2[1], borders_2[2], borders_2[3]);
+	pool2.shader = shaders["mesh"];
+	pool2.uniform.color = { 1,1,1 };
+	pool2.uniform.shading = { 1,0,0 };
+	pool2.uniform.transform.scaling = 1.f;
+	pool2.texture_id = create_texture_gpu(image_load_png("D:/EcolePolytechnique/INF585_ComputerAnimation/inf585_vcl/scenes/sources/BoidsFishes/caustics.png"));
+
+
+	pool3 = mesh_primitive_quad(borders_3[0], borders_3[1], borders_3[2], borders_3[3]);
+	pool3.shader = shaders["mesh"];
+	pool3.uniform.color = { 1,1,1 };
+	pool3.uniform.shading = { 1,0,0 };
+	pool3.uniform.transform.scaling = 1.f;
+	pool3.texture_id = create_texture_gpu(image_load_png("D:/EcolePolytechnique/INF585_ComputerAnimation/inf585_vcl/scenes/sources/BoidsFishes/caustics.png"));
+
 
 }
 
@@ -181,6 +359,22 @@ void scene_model::set_gui()
     // Can set the speed of the animation
     ImGui::SliderFloat("Time scale", &timer.scale, 0.05f, 2.0f, "%.2f s");
     ImGui::SliderFloat("Interval create sphere", &gui_scene.time_interval_new_sphere, 0.05f, 2.0f, "%.2f s");
+	//Boids forces factor:
+	ImGui::SliderFloat("factor allign", &gui_scene.allign_factor, 0.0f, 1.0f, "%.1f ");
+	ImGui::SliderFloat("factor cohesion", &gui_scene.cohesion_factor, 0.0f, 1.0f, "%.1f ");
+	ImGui::SliderFloat("factor separate", &gui_scene.separate_factor, 0.0f, 1.0f, "%.1f ");
+
+	//Boids Max parameters
+	ImGui::SliderFloat("max acceleration", &gui_scene.maxa, 0.0f, 2.0f, "%.1f ");
+	ImGui::SliderFloat("max velocity", &gui_scene.maxv, 0.0f, 2.0f, "%.1f ");
+
+	//Space
+	ImGui::SliderFloat("Space distance", &gui_scene.space, 1.0f, 20.0f, "%.5f ");
+	ImGui::SliderFloat("radius Allign", &gui_scene.radiusAllign, 0.f, 20.0f, "%.5f ");
+	ImGui::SliderFloat("radius cohersion", &gui_scene.radiusCohersion, 0.f, 20.0f, "%.5f ");
+	ImGui::SliderFloat("radius separate", &gui_scene.radiusSeparate, 0.f, 20.0f, "%.5f ");
+
+	ImGui::SliderFloat("Interval create sphere", &gui_scene.time_interval_new_sphere, 0.05f, 2.0f, "%.2f s");
     ImGui::Checkbox("Add sphere", &gui_scene.add_sphere);
 
     bool stop_anim  = ImGui::Button("Stop"); ImGui::SameLine();
