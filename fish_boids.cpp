@@ -19,13 +19,8 @@ void scene_model::frame_draw(std::map<std::string,GLuint>& , scene_structure& sc
 	if(rd ==1)
 		//create_new_bubble();
     compute_time_step(dt);
-
     display_particles(scene);
-    //draw(borders, scene.camera);
 	draw(pool, scene.camera);
-	draw(pool2, scene.camera);
-	draw(pool3, scene.camera);
-
 }
 
 void scene_model::compute_time_step(float dt)
@@ -47,9 +42,9 @@ void scene_model::compute_time_step(float dt)
 		vcl::vec3 f2 = cohesion(particles, i, gui_scene.radiusCohersion,  gui_scene.maxa, gui_scene.maxv);
 		vcl::vec3 f3 = separate(particles, i, gui_scene.radiusSeparate, gui_scene.maxa, gui_scene.maxv);
 		vcl::vec3 f4 = turn(particles, i, 0.5, gui_scene.maxa, gui_scene.maxv);
-		vcl::vec3 ftot = gui_scene.allign_factor   * f1 +
-						 gui_scene.cohesion_factor * f2 +
-						 gui_scene.separate_factor * f3 ;		
+		vcl::vec3 ftot = gui_scene.allign_factor * f1 +
+			gui_scene.cohesion_factor * f2 +
+			gui_scene.separate_factor * f3 + 0.5*f4;
 
 		f += ftot ;
 		v = v + dt * f;
@@ -107,10 +102,24 @@ void scene_model::compute_time_step(float dt)
 	}*/
 
 
+	const int mn = pool0.position.size();
+	//for (int k = 0; k < mn; ++k)
+	//{
+	//	// Weight with respect to distance
 
+	//		// Current position
+	//		vec3& p = pool0.position[k];
+	//		const vec3& p0 = position_saved[k];
+	//		p.x = p0.x + 2 * cos(timer.t-((2*3.14159*k)/mn)) ;
+	//		
+	//		
+	//	
+	//}
+	
+	pool.update_position(pool0.position);
+	pool.update_normal(pool0.normal);
 
-
-        
+	pool.uniform.transform.rotation = rotation_from_axis_angle_mat3({ 0,1,0 }, std::sin(timer.t/(2*3.14159)));
 }
 
 
@@ -212,14 +221,9 @@ vcl::vec3 separate(std::vector<particle_structure> particles, int idx_particle, 
 vcl::vec3 turn(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv) {
 	vcl::vec3 fturn;
 	particle_structure currentp = particles[idx_particle];
-
-	float phi = 2 * 3.1415 * r * 10000;
-
-	fturn.x = cos(currentp.t);
-	//fturn.y = sin(currentp.t) + sin(phi);
-	//fturn.z = sin(currentp.t);
+	vec3 p2 = { 0,0,0 };
 	
-	return maxa*fturn;
+	return (norm(currentp.p - p2))*normalize(p2- currentp.p);
 }
 
 void scene_model::create_new_particle()
@@ -316,38 +320,18 @@ void scene_model::setup_data(std::map<std::string,GLuint>& shaders, scene_struct
 	/*bubble = mesh_primitive_sphere(0.03f);
 	bubble.shader = shaders["mesh"];*/
 
-    sphere = mesh_drawable( mesh_primitive_sphere(1.0f));
-    sphere.shader = shaders["mesh"];
-	float s = 10;
-    
-	//borders=mesh_primitive_quad();
- //   borders = segments_gpu(borders_segments);
- //   borders.uniform.color = {0,0,0};
- //   borders.shader = shaders["curve"];
-	std::vector<vec3> borders_1 = { {-s,-s,-s},{-s,s,-s}, {s,-s,-s},{-s,-s,s} };
-	std::vector<vec3> borders_2 = { {s,s,-s},{s,s,s}, {s,-s,-s},{-s,s,-s} };
-	std::vector<vec3> borders_3 = { {s,-s,s},{-s,-s,s}, {s,-s,-s},{s,s,s} };
-	pool = mesh_primitive_quad(borders_1[0], borders_1[1], borders_1[2], borders_1[3]);
-	pool.shader = shaders["mesh"];
+    sphere = mesh_drawable( mesh_primitive_sphere(3.0f));
+    sphere.shader = shaders["mesh_bf"];
+	float s = 50;
+	//sphere.texture_id = create_texture_gpu(image_load_png("D:/EcolePolytechnique/INF585_ComputerAnimation/coronavirus_PNG6.png"));
+	sphere.uniform.color = { 1,1,1 };
+	pool0 = mesh_primitive_sphere(s, { 0,0,0 }, 150, 2 * 150);
+	position_saved = pool0.position;
+
+	pool = pool0;
+	pool.shader = shaders["mesh_bf"];
 	pool.uniform.color = { 1,1,1 };
-	pool.uniform.shading = { 1,0,0 };
-	pool.uniform.transform.scaling = 1.f;
-	pool.texture_id = create_texture_gpu(image_load_png("D:/EcolePolytechnique/INF585_ComputerAnimation/inf585_vcl/scenes/sources/BoidsFishes/caustics.png"));
-
-	pool2 = mesh_primitive_quad(borders_2[0], borders_2[1], borders_2[2], borders_2[3]);
-	pool2.shader = shaders["mesh"];
-	pool2.uniform.color = { 1,1,1 };
-	pool2.uniform.shading = { 1,0,0 };
-	pool2.uniform.transform.scaling = 1.f;
-	pool2.texture_id = create_texture_gpu(image_load_png("D:/EcolePolytechnique/INF585_ComputerAnimation/inf585_vcl/scenes/sources/BoidsFishes/caustics.png"));
-
-
-	pool3 = mesh_primitive_quad(borders_3[0], borders_3[1], borders_3[2], borders_3[3]);
-	pool3.shader = shaders["mesh"];
-	pool3.uniform.color = { 1,1,1 };
-	pool3.uniform.shading = { 1,0,0 };
-	pool3.uniform.transform.scaling = 1.f;
-	pool3.texture_id = create_texture_gpu(image_load_png("D:/EcolePolytechnique/INF585_ComputerAnimation/inf585_vcl/scenes/sources/BoidsFishes/caustics.png"));
+	pool.texture_id = create_texture_gpu(image_load_png("scenes/sources/caustics.png"));
 
 
 }
@@ -383,7 +367,6 @@ void scene_model::set_gui()
     if(stop_anim)  timer.stop();
     if(start_anim) timer.start();
 }
-
 
 
 

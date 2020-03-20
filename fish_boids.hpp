@@ -46,16 +46,23 @@ struct scene_model : scene_base
     vcl::mesh_drawable sphere;      // Visual display of particles
     vcl::segments_drawable borders; // Visual display of borders
 	vcl::mesh_drawable pool;
+	vcl::mesh pool0;
 	vcl::mesh_drawable pool2;
 	vcl::mesh_drawable pool3;
 	vcl::mesh_drawable pool4;
     vcl::timer_event timer;
     gui_scene_structure gui_scene;
-
+	vcl::buffer<vcl::vec3> position_saved;
+	vcl::buffer<vcl::vec3> normals_saved;
 	vcl::mesh_drawable bubble;
 	vcl::timer_event timer_bubble;
 };
 
+
+vcl::vec3 align(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv);
+vcl::vec3 cohesion(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv);
+vcl::vec3 separate(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv);
+vcl::vec3 turn(std::vector<particle_structure> particles, int idx_particle, float r, float maxa, float maxv);
 
 
 #endif
