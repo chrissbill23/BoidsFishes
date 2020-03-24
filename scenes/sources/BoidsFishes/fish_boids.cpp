@@ -31,11 +31,10 @@ void scene_model::frame_draw(std::map<std::string,GLuint>& shaders, scene_struct
 
 void scene_model::compute_time_step(float dt)
 {
-
     float mu_box = 1;
-
     const size_t N = particles.size();
 
+	//For every particule, calculate steering forces
 	for (size_t i = 0; i < N; ++i) {
 		fish_structure& particle = particles[i];
 		vec3& v = particle.v;
@@ -43,13 +42,100 @@ void scene_model::compute_time_step(float dt)
 		vec3& f = particle.f;
 		float& r = particle.r;
 
-		vcl::vec3 f1= align(particles, i, gui_scene.radiusAllign, gui_scene.maxa,gui_scene.maxv);
-		vcl::vec3 f2 = cohesion(particles, i, gui_scene.radiusCohersion,  gui_scene.maxa, gui_scene.maxv);
-		vcl::vec3 f3 = separate(particles, i, gui_scene.radiusSeparate, gui_scene.maxa, gui_scene.maxv);
-		vcl::vec3 f4 = turn(particles, i);
+		//desired veolicites for each type of force
+		vec3 avg_v_align = { 0.0,0.0,0.0 };
+		vec3 avg_v_coh = { 0.0,0.0,0.0 };
+		vec3 avg_v_sep = { 0.0,0.0,0.0 };
+		//number of neighbors for each force
+		int neigh_al = 0;
+		int neigh_coh = 0;
+		int neigh_sep = 0;
+
+		//calculate distance to know neighborhood and get desired velocity
+		for (size_t j = 0; j < N; ++j) {
+			float d = norm(p - particles[j].p);
+
+			//align: desired veolicity points towards average V of the neighborhood
+			if (i != j && d < gui_scene.radiusAllign) {
+				avg_v_align += particles[j].v;
+				neigh_al++;
+			}
+
+			//cohesion: desired veolicity points towards average position of neighborhood
+			if (i != j && d < gui_scene.radiusCohersion) {
+				avg_v_coh += particles[j].p;
+				neigh_coh++;
+			}
+
+			//separate: desired veolicity points towards weighted average vector of neighborhood towards particle
+			if (i != j && d < gui_scene.radiusSeparate) {
+				vcl::vec3 oppvec = p - particles[j].p;
+				oppvec /= pow(d, 2);
+				avg_v_sep += oppvec;
+				neigh_sep++;
+			}
+
+		}
+
+		//max acceleration and  velocity
+		//all particles must have same velocity magnitude and controlled max acceleration
+		float maxv = gui_scene.maxv;
+		float maxa = gui_scene.maxa;
+		
+
+		//align steer force
+		if (neigh_al > 0) {
+			avg_v_align /= neigh_al;
+			avg_v_align = normalize(avg_v_align) * maxv;
+
+			avg_v_align = avg_v_align - v;
+
+			if (norm(avg_v_align) > maxa) {
+				avg_v_align = normalize(avg_v_align) * maxa;
+			}
+
+		}
+		else {
+			avg_v_align = vcl::vec3(0, 0, 0);
+		}
+
+		//cohesion steer force
+		if (neigh_coh > 0) {
+			avg_v_coh /= neigh_coh;
+			avg_v_coh = avg_v_coh - p;
+			avg_v_coh = normalize(avg_v_coh) * maxv;
+
+			if (norm(avg_v_coh) > maxa) {
+				avg_v_coh = normalize(avg_v_coh) * maxa;
+			}
+		}
+		else {
+			avg_v_coh = vcl::vec3(0, 0, 0);
+		}
+
+		//separate steer force
+		if (neigh_sep > 0) {
+			avg_v_sep /= neigh_sep;
+			avg_v_sep = normalize(avg_v_sep) * maxv;
+			avg_v_sep = avg_v_sep - v;
+			float n = norm(avg_v_sep);
+			if (norm(avg_v_sep) > maxa) {
+				avg_v_sep = normalize(avg_v_sep) * maxa;
+			}
+
+		}
+
+
+		vcl::vec3 f1 = avg_v_align / timer.scale;
+		vcl::vec3 f2 = avg_v_coh / timer.scale;
+		vcl::vec3 f3 = avg_v_sep / timer.scale;
+		vcl::vec3 f4 = turn(particles, i) / timer.scale;
+
+		//sum of forces weighted by user values
+
 		vcl::vec3 ftot = gui_scene.allign_factor * f1 +
 			gui_scene.cohesion_factor * f2 +
-			gui_scene.separate_factor * f3 + 0.5*f4;
+			gui_scene.separate_factor * f3 + 0.2*f4;
 
 		f += ftot ;
 		v = v + dt * f;
@@ -57,8 +143,7 @@ void scene_model::compute_time_step(float dt)
 			v = normalize(v) * gui_scene.maxv;
 		}
 		p = p + dt * v;
-		//f *= 0;
-		// check bounding box
+
 
 		float d_x = abs(p.x) + r - gui_scene.space;
 		float d_y = abs(p.y) + r - gui_scene.space;
